@@ -19,9 +19,10 @@
   class FunctionAST;
   class SeqAST;
   class PrototypeAST;
-  class BlockExprAST;
+  class BlockAST;
   class VarBindingsAST;
   class GlobalVariableAST;
+  class AssignmentExprAST;
 }
 
 // The parsing context.
@@ -75,7 +76,7 @@
 %type <PrototypeAST*> external
 %type <PrototypeAST*> proto
 %type <std::vector<std::string>> idseq
-%type <BlockExprAST*> blockexp
+%type <BlockAST*> block
 %type <std::vector<VarBindingsAST*>> vardefs;
 %type <std::vector<RootAST*>> stmts;
 %type <RootAST*> stmt;
@@ -108,7 +109,7 @@ proto:
   "id" "(" idseq ")"    { $$ = new PrototypeAST($1,$3);  };
 
 globalvar:
-  "global" "id"         {$$ = new GlobalVariableAST($2)};
+  "global" "id"         {$$ = new GlobalVariableAST($2);};
 
 
 idseq:
@@ -126,11 +127,11 @@ stmt:
 | exp                   {$$ = $1;};
 
 assignment:
-  "id" "=" exp          {$$ = new AssignmentExprAST($1,$3)};
+  "id" "=" exp          {$$ = new AssignmentExprAST($1,$3);};
 
 block:
-  "{" stmts "}"             {}
-| "{" vardefs ";" stmts "}" {};
+  "{" stmts "}"             { $$ = new BlockAST($2); }
+| "{" vardefs ";" stmts "}" { $$ = new BlockAST($2,$4); };
 
 %left ":";
 %left "<" "==";
@@ -149,7 +150,7 @@ exp:
 
 /*
 blockexp:
-  "{" vardefs ";" exp "}" {$$ = new BlockExprAST($2,$4); }
+  "{" vardefs ";" exp "}" {$$ = new BlockAST($2,$4); }
 */
 
 vardefs:

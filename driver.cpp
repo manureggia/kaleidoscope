@@ -238,11 +238,15 @@ Value* IfExprAST::codegen(driver& drv){
 };
 
 
-/************************* Block Expression Tree *************************/
+/************************* Block Tree *************************/
 
-BlockExprAST::BlockExprAST(std::vector<VarBindingsAST*> Def,ExprAST* Val):
-  Def(std::move(Def)), Val(Val) {};
-Value* BlockExprAST::codegen(driver& drv){
+BlockAST::BlockAST(std::vector<VarBindingsAST*> Def,std::vector<RootAST*> Stmts):
+  Def(std::move(Def)), Stmts(std::move(Stmts)) {};
+
+BlockAST::BlockAST(std::vector<RootAST*> Stmts):
+  Stmts(std::move(Stmts)) {};
+
+Value* BlockAST::codegen(driver& drv){
   // vettore per il salvataggio della symbol table
   std::vector<AllocaInst*> tmp;
   for (int i=0; i<Def.size();i++ ){
@@ -252,7 +256,9 @@ Value* BlockExprAST::codegen(driver& drv){
     tmp.push_back(drv.NamedValues[Def[i]->getName()]);
     drv.NamedValues[Def[i]->getName()] = boundval;
   }
-  Value* blockvalue = Val->codegen(drv);
+  Value* blockvalue;
+  for(int i=0; i<Stmts.size(); i++)
+    blockvalue = Stmts[i]->codegen(drv);
   for (int i=0; i<Def.size();i++ )
     drv.NamedValues[Def[i]->getName()] = tmp[i]; //rimetto i valori originali della symb
   return blockvalue;
@@ -264,11 +270,12 @@ VarBindingsAST::VarBindingsAST(std::string Name, ExprAST* Val) : Name(Name), Val
 std::string& VarBindingsAST::getName(){ return Name; };
 AllocaInst* VarBindingsAST::codegen(driver& drv) {
   Function *fun = builder->GetInsertBlock()->getParent();
+  Value* boundval;
   if (Val)
-    Value* boundval = Val->codegen(drv);
+    boundval = Val->codegen(drv);
   else{
     NumberExprAST* defaultVal = new NumberExprAST(0.0);
-    Value* boundval = defaultVal->codegen(drv);
+    boundval = defaultVal->codegen(drv);
   }
   AllocaInst* Alloca = CreateEntryBlockAlloca(fun,Name);
   builder->CreateStore(boundval,Alloca);
@@ -281,9 +288,9 @@ AllocaInst* VarBindingsAST::codegen(driver& drv) {
 AssignmentExprAST::AssignmentExprAST(std::string Name, ExprAST* Val) : Name(Name), Val(Val) {};
 std::string& AssignmentExprAST::getName(){ return Name; };
 AllocaInst* AssignmentExprAST::codegen(driver& drv) {
-  AllocaInst *Variable = NamedValues[Name];
+  AllocaInst *Variable = drv.NamedValues[Name];
   if (!Variable)
-    return LogErrorV("Unknown variable name");
+    return nullptr;
   Value* boundval = Val->codegen(drv);
   if(!boundval)
     return nullptr;
@@ -296,10 +303,11 @@ AllocaInst* AssignmentExprAST::codegen(driver& drv) {
 GlobalVariableAST::GlobalVariableAST(std::string Name) : Name(Name) {}
 std::string& GlobalVariableAST::getName(){ return Name; };
 Value* GlobalVariableAST::codegen(driver &drv){
-  if(module->getNameGlobal(Name) || module->getFunction(Name))
+  if(module->getNamedGlobal(Name) || module->getFunction(Name))
     return LogErrorV("Variabile o Funzione già esistente");
   GlobalValue::LinkageTypes linkage = GlobalValue::CommonLinkage;
-  return new GlobalVariable(module,Type::getDoubleTy(*context),false, linkage, 0.0, Name);
+  double defaultVal=0.0;
+  return new GlobalVariable(*module,Type::getDoubleTy(*context),false, linkage, ConstantFP::get(*context, APFloat(defaultVal)), Name);
 }
 
 /************************* Prototype Tree *************************/
