@@ -312,15 +312,10 @@ AllocaInst* AssignmentExprAST::codegen(driver& drv) {
 
 GlobalVariableAST::GlobalVariableAST(std::string Name) : Name(Name) {}
 std::string& GlobalVariableAST::getName(){ return Name; };
-Value* GlobalVariableAST::codegen(driver &drv){
-  //Function *fun = builder->GetInsertBlock()->getParent();
-  //AllocaInst* Alloca = CreateEntryBlockAlloca(fun,Name);
-  if(module->getNamedGlobal(Name) || module->getFunction(Name))
-    return LogErrorV("Variabile o Funzione già esistente");
-  GlobalValue::LinkageTypes linkage = GlobalValue::CommonLinkage;
-  double defaultVal=0.0;
-  GlobalVariable* globVar = new GlobalVariable(*module,Type::getDoubleTy(*context),false, linkage, ConstantFP::get(*context, APFloat(defaultVal)), Name);
-  //builder->CreateStore(globVar, Alloca);
+Value* GlobalVariableAST::codegen(driver &drv){ 
+  GlobalVariable *globVar = new GlobalVariable(*module, Type::getDoubleTy(*context), false, GlobalValue::CommonLinkage,  ConstantFP::get(Type::getDoubleTy(*context), 0.0), Name);
+  globVar->print(errs());
+  fprintf(stderr, "\n");
   return globVar;
 }
 
