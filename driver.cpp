@@ -104,8 +104,12 @@ lexval VariableExprAST::getLexVal() const {
 // il nome del registro in cui verrà trasferito il valore dalla memoria
 Value *VariableExprAST::codegen(driver& drv) {
   AllocaInst *A = drv.NamedValues[Name];
-  if (!A)
-     return LogErrorV("Variabile non definita");
+  if (!A){
+    GlobalVariable* globVar = module->getNamedGlobal(Name);
+    if (!globVar)
+      return LogErrorV("Variabile non definita: "+Name);
+    return builder->CreateLoad(globVar->getValueType(), globVar, Name.c_str());
+  }
   return builder->CreateLoad(A->getAllocatedType(), A, Name.c_str());
 }
 
@@ -289,12 +293,18 @@ AssignmentExprAST::AssignmentExprAST(std::string Name, ExprAST* Val) : Name(Name
 std::string& AssignmentExprAST::getName(){ return Name; };
 AllocaInst* AssignmentExprAST::codegen(driver& drv) {
   AllocaInst *Variable = drv.NamedValues[Name];
-  if (!Variable)
-    return nullptr;
   Value* boundval = Val->codegen(drv);
+
   if(!boundval)
     return nullptr;
-  builder->CreateStore(Variable,boundval);
+  if (!Variable){
+    Value* globVar = module->getNamedGlobal(Name);
+    if(!globVar)
+      return nullptr;
+    builder->CreateStore(boundval,globVar);
+    return nullptr;
+  }
+  builder->CreateStore(boundval,Variable);
   return Variable;
 };
 
@@ -303,11 +313,15 @@ AllocaInst* AssignmentExprAST::codegen(driver& drv) {
 GlobalVariableAST::GlobalVariableAST(std::string Name) : Name(Name) {}
 std::string& GlobalVariableAST::getName(){ return Name; };
 Value* GlobalVariableAST::codegen(driver &drv){
+  //Function *fun = builder->GetInsertBlock()->getParent();
+  //AllocaInst* Alloca = CreateEntryBlockAlloca(fun,Name);
   if(module->getNamedGlobal(Name) || module->getFunction(Name))
     return LogErrorV("Variabile o Funzione già esistente");
   GlobalValue::LinkageTypes linkage = GlobalValue::CommonLinkage;
   double defaultVal=0.0;
-  return new GlobalVariable(*module,Type::getDoubleTy(*context),false, linkage, ConstantFP::get(*context, APFloat(defaultVal)), Name);
+  GlobalVariable* globVar = new GlobalVariable(*module,Type::getDoubleTy(*context),false, linkage, ConstantFP::get(*context, APFloat(defaultVal)), Name);
+  //builder->CreateStore(globVar, Alloca);
+  return globVar;
 }
 
 /************************* Prototype Tree *************************/

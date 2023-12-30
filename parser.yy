@@ -118,8 +118,8 @@ idseq:
 | "id" idseq            { $2.insert($2.begin(),$1); $$ = $2; };
 
 stmts:
-  stmt                  {std::vector<RootAST*> statemets; statemets.push_back($1); $$ = statemets; }
-| stmt ";" stmts        {$3.push_back($1); $$ = $3;};
+  stmt                  {std::vector<RootAST*> statemets; statemets.insert(statemets.begin(),$1); $$ = statemets; }
+| stmt ";" stmts        {$3.insert($3.begin(),$1); $$ = $3;};
 
 stmt:
   assignment            {$$ = $1;}
