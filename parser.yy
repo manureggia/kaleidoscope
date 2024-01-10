@@ -23,6 +23,8 @@
   class VarBindingsAST;
   class GlobalVariableAST;
   class AssignmentExprAST;
+  class StmtAST; 
+  class IfStmtAST;
 }
 
 // The parsing context.
@@ -59,6 +61,8 @@
   DEF        "def"
   VAR        "var"
   GLOBAL     "global"
+  IF         "if"
+  ELSE       "else"
 ;
 
 %token <std::string> IDENTIFIER "id"
@@ -78,8 +82,9 @@
 %type <std::vector<std::string>> idseq
 %type <BlockAST*> block
 %type <std::vector<VarBindingsAST*>> vardefs;
-%type <std::vector<RootAST*>> stmts;
-%type <RootAST*> stmt;
+%type <std::vector<StmtAST*>> stmts;
+%type <StmtAST*> stmt;
+%type <IfStmtAST*> ifstmt;
 %type <VarBindingsAST*> binding;
 %type <GlobalVariableAST*> globalvar;
 %type <AssignmentExprAST*> assignment;
@@ -118,12 +123,13 @@ idseq:
 | "id" idseq            { $2.insert($2.begin(),$1); $$ = $2; };
 
 stmts:
-  stmt                  {std::vector<RootAST*> statemets; statemets.insert(statemets.begin(),$1); $$ = statemets; }
+  stmt                  {std::vector<StmtAST*> statemets; statemets.insert(statemets.begin(),$1); $$ = statemets; }
 | stmt ";" stmts        {$3.insert($3.begin(),$1); $$ = $3;};
 
 stmt:
   assignment            {$$ = $1;}
 | block                 {$$ = $1;}
+| ifstmt                {$$ = $1;}
 | exp                   {$$ = $1;};
 
 assignment:
@@ -148,28 +154,29 @@ exp:
 | "number"              { $$ = new NumberExprAST($1); }
 | expif                 { $$ = $1; };
 
-/*
-blockexp:
-  "{" vardefs ";" exp "}" {$$ = new BlockAST($2,$4); }
-*/
-
 vardefs:
   binding               { std::vector<VarBindingsAST*> definitions; definitions.push_back($1); $$ = definitions; }
-| vardefs ";" binding   { $1.push_back($3); $$ = $1; }
+| vardefs ";" binding   { $1.push_back($3); $$ = $1; };
 
 binding:
-  "var" "id" initexp    { $$ = new VarBindingsAST($2,$3); }
+  "var" "id" initexp    { $$ = new VarBindingsAST($2,$3); };
 
 initexp:
   %empty  {$$ = nullptr;}
-| "=" exp {$$ = $2;}
+| "=" exp {$$ = $2;};
 
 expif:
-  condexp "?" exp ":" exp { $$ = new IfExprAST($1,$3,$5);}
+  condexp "?" exp ":" exp { $$ = new IfExprAST($1,$3,$5);};
+
+ifstmt :
+  "if" "(" condexp ")" stmt                   {$$ = new IfStmtAST($3,$5); }
+| "if" "(" condexp ")" stmt "else" stmt       {$$ = new IfStmtAST($3,$5,$7); }; 
+
+
 
 condexp:
   exp "<" exp           { $$ = new BinaryExprAST('<',$1,$3); }
-| exp "==" exp           { $$ = new BinaryExprAST('=',$1,$3); }
+| exp "==" exp           { $$ = new BinaryExprAST('=',$1,$3); };
 
 idexp:
   "id"                  { $$ = new VariableExprAST($1); }

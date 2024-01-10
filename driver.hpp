@@ -76,8 +76,10 @@ public:
   Value *codegen(driver& drv) override;
 };
 
+class StmtAST : public RootAST{};
+
 /// ExprAST - Classe base per tutti i nodi espressione
-class ExprAST : public RootAST {};
+class ExprAST : public StmtAST {};
 
 /// NumberExprAST - Classe per la rappresentazione di costanti numeriche
 class NumberExprAST : public ExprAST {
@@ -140,13 +142,13 @@ class IfExprAST : public ExprAST {
 
 /// BlockAST
 
-class BlockAST : public ExprAST {
+class BlockAST : public StmtAST {
   private:
     std::vector<VarBindingsAST*> Def;
-    std::vector<RootAST*> Stmts;
+    std::vector<StmtAST*> Stmts;
   public:
-  BlockAST(std::vector<VarBindingsAST*> Def,std::vector<RootAST*> Stmts);
-  BlockAST(std::vector<RootAST*> Stmts);
+  BlockAST(std::vector<VarBindingsAST*> Def,std::vector<StmtAST*> Stmts);
+  BlockAST(std::vector<StmtAST*> Stmts);
   Value *codegen(driver& drv) override;
 };
 
@@ -154,7 +156,7 @@ class BlockAST : public ExprAST {
 
 /// VarBindingsAST
 
-class VarBindingsAST : public RootAST{
+class VarBindingsAST : public StmtAST{
   private:
     std::string Name;
     ExprAST* Val;
@@ -166,13 +168,13 @@ class VarBindingsAST : public RootAST{
 
 /// AssigmentExprAST 
 
-class AssignmentExprAST : public RootAST{
+class AssignmentExprAST : public StmtAST{
   private:
     std::string Name;
     ExprAST* Val;
   public:
     AssignmentExprAST(std::string Name, ExprAST* Val);
-    AllocaInst* codegen(driver& drv) override;
+    Value* codegen(driver& drv) override;
     std::string& getName();
 };
 
@@ -185,6 +187,19 @@ class GlobalVariableAST: public RootAST{
     GlobalVariableAST(std::string Name);
     Value* codegen(driver& drv) override;
     std::string& getName();
+};
+
+/// Calsse per la rappresentazione del blocco IF
+
+class IfStmtAST: public StmtAST{
+  private:
+    ExprAST* cond;
+    StmtAST* trueblock; 
+    StmtAST* falseblock; 
+  public:
+    IfStmtAST(ExprAST* cond, StmtAST* trueblock, StmtAST* falseblock);
+    IfStmtAST(ExprAST* cond, StmtAST* trueblock);
+    Value* codegen(driver& drv) override;
 };
 
 /// PrototypeAST - Classe per la rappresentazione dei prototipi di funzione
@@ -209,11 +224,11 @@ public:
 class FunctionAST : public RootAST {
 private:
   PrototypeAST* Proto;
-  ExprAST* Body;
+  StmtAST* Body;
   bool external;
   
 public:
-  FunctionAST(PrototypeAST* Proto, ExprAST* Body);
+  FunctionAST(PrototypeAST* Proto, StmtAST* Body);
   Function *codegen(driver& drv) override;
 };
 

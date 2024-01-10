@@ -244,10 +244,10 @@ Value* IfExprAST::codegen(driver& drv){
 
 /************************* Block Tree *************************/
 
-BlockAST::BlockAST(std::vector<VarBindingsAST*> Def,std::vector<RootAST*> Stmts):
+BlockAST::BlockAST(std::vector<VarBindingsAST*> Def,std::vector<StmtAST*> Stmts):
   Def(std::move(Def)), Stmts(std::move(Stmts)) {};
 
-BlockAST::BlockAST(std::vector<RootAST*> Stmts):
+BlockAST::BlockAST(std::vector<StmtAST*> Stmts):
   Stmts(std::move(Stmts)) {};
 
 Value* BlockAST::codegen(driver& drv){
@@ -261,8 +261,11 @@ Value* BlockAST::codegen(driver& drv){
     drv.NamedValues[Def[i]->getName()] = boundval;
   }
   Value* blockvalue;
-  for(int i=0; i<Stmts.size(); i++)
+  for(int i=0; i<Stmts.size(); i++){
     blockvalue = Stmts[i]->codegen(drv);
+    if(!blockvalue) return nullptr;
+  }
+    
   for (int i=0; i<Def.size();i++ )
     drv.NamedValues[Def[i]->getName()] = tmp[i]; //rimetto i valori originali della symb
   return blockvalue;
@@ -291,21 +294,19 @@ AllocaInst* VarBindingsAST::codegen(driver& drv) {
 
 AssignmentExprAST::AssignmentExprAST(std::string Name, ExprAST* Val) : Name(Name), Val(Val) {};
 std::string& AssignmentExprAST::getName(){ return Name; };
-AllocaInst* AssignmentExprAST::codegen(driver& drv) {
+Value* AssignmentExprAST::codegen(driver& drv) {
   AllocaInst *Variable = drv.NamedValues[Name];
   Value* boundval = Val->codegen(drv);
 
-  if(!boundval)
-    return nullptr;
+  if(!boundval) return nullptr;
   if (!Variable){
     Value* globVar = module->getNamedGlobal(Name);
-    if(!globVar)
-      return nullptr;
+    if(!globVar) return nullptr;
     builder->CreateStore(boundval,globVar);
-    return nullptr;
+    return boundval;
   }
   builder->CreateStore(boundval,Variable);
-  return Variable;
+  return boundval;
 };
 
 /************************* GlobalVariableAST *************************/
@@ -318,6 +319,66 @@ Value* GlobalVariableAST::codegen(driver &drv){
   fprintf(stderr, "\n");
   return globVar;
 }
+
+
+
+/************************* IF BLOCK *************************/
+
+
+IfStmtAST::IfStmtAST(ExprAST* cond, StmtAST* trueblock, StmtAST* falseblock):
+  cond(cond), trueblock(trueblock), falseblock(falseblock) {};
+
+IfStmtAST::IfStmtAST(ExprAST* cond, StmtAST* trueblock):
+  cond(cond), trueblock(trueblock) {};
+
+Value* IfStmtAST::codegen(driver& drv){
+  Value* CondV = cond->codegen(drv);
+  if (!CondV) return nullptr;
+
+  Function *fun = builder->GetInsertBlock()->getParent();
+  BasicBlock *TrueBB = BasicBlock::Create(*context, "trueblock",fun);
+  BasicBlock *FalseBB = BasicBlock::Create(*context, "falseblock");
+  BasicBlock *MergeBB = BasicBlock::Create(*context, "mergeblock");
+  
+  if(falseblock)
+    builder->CreateCondBr(CondV, TrueBB, FalseBB);
+  else
+    builder->CreateCondBr(CondV, TrueBB, MergeBB);
+
+  builder->SetInsertPoint(TrueBB);
+  Value* trueV = trueblock->codegen(drv);
+  if(!trueV) return nullptr;
+
+  TrueBB = builder->GetInsertBlock();
+  builder->CreateBr(MergeBB);
+
+  Value* falseV;
+  if(falseblock){
+    FalseBB = BasicBlock::Create(*context, "falseblock");
+    fun->insert(fun->end(), FalseBB);
+    builder->SetInsertPoint(FalseBB);
+    falseV = falseblock->codegen(drv);
+    if(!falseV) return nullptr;
+
+    FalseBB = builder->GetInsertBlock();
+    builder->CreateBr(MergeBB);
+  }
+  
+  fun->insert(fun->end(),MergeBB);
+  builder->SetInsertPoint(MergeBB);
+
+  if(falseblock){
+    PHINode *P = builder->CreatePHI(Type::getDoubleTy(*context),2);
+    P-> addIncoming(trueV, TrueBB);
+    P-> addIncoming(falseV, FalseBB);
+    return P;
+  }else{
+    PHINode *P = builder->CreatePHI(Type::getDoubleTy(*context),1);
+    P-> addIncoming(trueV, TrueBB);
+    return P;
+  }
+  
+};
 
 /************************* Prototype Tree *************************/
 PrototypeAST::PrototypeAST(std::string Name, std::vector<std::string> Args):
@@ -377,7 +438,7 @@ Function *PrototypeAST::codegen(driver& drv) {
 }
 
 /************************* Function Tree **************************/
-FunctionAST::FunctionAST(PrototypeAST* Proto, ExprAST* Body): Proto(Proto), Body(Body) {};
+FunctionAST::FunctionAST(PrototypeAST* Proto, StmtAST* Body): Proto(Proto), Body(Body) {};
 
 Function *FunctionAST::codegen(driver& drv) {
   // Verifica che la funzione non sia già presente nel modulo, cioò che non
