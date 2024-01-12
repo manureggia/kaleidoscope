@@ -271,10 +271,18 @@ Value* BlockAST::codegen(driver& drv){
   return blockvalue;
 };
 
+/************************* InitAST *************************/
+
+std::string& InitAST::getName() {return Name;};
+initType InitAST::getType() {return INIT;};
+
+
 /************************* VarBindingAST *************************/
 
 VarBindingsAST::VarBindingsAST(std::string Name, ExprAST* Val) : Name(Name), Val(Val) {};
 std::string& VarBindingsAST::getName(){ return Name; };
+initType VarBindingsAST::getType() {return BINDING;};
+
 AllocaInst* VarBindingsAST::codegen(driver& drv) {
   Function *fun = builder->GetInsertBlock()->getParent();
   Value* boundval;
@@ -294,6 +302,7 @@ AllocaInst* VarBindingsAST::codegen(driver& drv) {
 
 AssignmentExprAST::AssignmentExprAST(std::string Name, ExprAST* Val) : Name(Name), Val(Val) {};
 std::string& AssignmentExprAST::getName(){ return Name; };
+initType AssignmentExprAST::getType() {return ASSIGNMENT;};
 Value* AssignmentExprAST::codegen(driver& drv) {
   AllocaInst *Variable = drv.NamedValues[Name];
   Value* boundval = Val->codegen(drv);
@@ -380,6 +389,66 @@ Value* IfStmtAST::codegen(driver& drv){
   
 };
 
+
+
+/************************* FOR BLOCK *************************/
+
+ForStmtAST::ForStmtAST(InitAST* init, ExprAST* cond, AssignmentExprAST* step, StmtAST* body):
+init(init), cond(cond), step(step), body(body) {};
+Value* ForStmtAST::codegen(driver& drv) {
+  
+  Function *fun = builder->GetInsertBlock()->getParent();
+
+  //inizializzazione
+  BasicBlock *InitBB = BasicBlock::Create(*context, "initloop",fun);
+  builder->SetInsertPoint(InitBB);
+
+  std::string varName = init->getName();
+  AllocaInst* oldVar;
+  Value* initVal = init->codegen(drv);;
+  if (!initVal) return nullptr;
+  //controllo se sono assigment -> il getType mi restituisce ASSIGMENT o BINDING
+  if (init->getType() == BINDING){
+    oldVar = drv.NamedValues[varName];
+    drv.NamedValues[varName] = (AllocaInst*) initVal;  
+  }
+  
+
+
+  BasicBlock *CondBB = BasicBlock::Create(*context, "cond", fun);
+  BasicBlock *LoopBB = BasicBlock::Create(*context, "loop", fun);
+  BasicBlock *EndLoop = BasicBlock::Create(*context, "endloop", fun);
+  
+  //valutazione condizione
+  builder->SetInsertPoint(CondBB);
+  Value *condVal = cond->codegen(drv);
+  if(!condVal) return nullptr;
+  builder->CreateCondBr(condVal, LoopBB, EndLoop);
+  //body
+  builder->SetInsertPoint(LoopBB);
+  Value *bodyVal = body->codegen(drv);
+  if(!bodyVal) return nullptr;
+  //step
+  Value* stepVal = step->codegen(drv);
+  if(!stepVal) return nullptr;
+
+  //br incondizionato all'inizio del loop
+  builder->CreateBr(CondBB);
+  //End loop
+  builder->SetInsertPoint(EndLoop);
+  PHINode *P = builder->CreatePHI(Type::getDoubleTy(*context),1);
+  P->addIncoming(ConstantFP::get(Type::getDoubleTy(*context), 0.0),CondBB);
+
+  if(init->getType() == BINDING){
+    drv.NamedValues[varName] = oldVar; //rimetto i valori originali della symb
+  }
+  return P;
+};
+
+
+
+
+
 /************************* Prototype Tree *************************/
 PrototypeAST::PrototypeAST(std::string Name, std::vector<std::string> Args):
   Name(Name), Args(std::move(Args)), emitcode(true) {};  //Di regola il codice viene emesso
@@ -438,7 +507,7 @@ Function *PrototypeAST::codegen(driver& drv) {
 }
 
 /************************* Function Tree **************************/
-FunctionAST::FunctionAST(PrototypeAST* Proto, StmtAST* Body): Proto(Proto), Body(Body) {};
+FunctionAST::FunctionAST(PrototypeAST* Proto, ExprAST* Body): Proto(Proto), Body(Body) {};
 
 Function *FunctionAST::codegen(driver& drv) {
   // Verifica che la funzione non sia già presente nel modulo, cioò che non

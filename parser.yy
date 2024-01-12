@@ -25,6 +25,8 @@
   class AssignmentExprAST;
   class StmtAST; 
   class IfStmtAST;
+  class InitAST;
+  class ForStmtAST;
 }
 
 // The parsing context.
@@ -63,6 +65,7 @@
   GLOBAL     "global"
   IF         "if"
   ELSE       "else"
+  FOR        "for"
 ;
 
 %token <std::string> IDENTIFIER "id"
@@ -88,6 +91,8 @@
 %type <VarBindingsAST*> binding;
 %type <GlobalVariableAST*> globalvar;
 %type <AssignmentExprAST*> assignment;
+%type <InitAST*> init;
+%type <ForStmtAST*> forstmt;
 %%
 %start startsymb;
 
@@ -130,6 +135,7 @@ stmt:
   assignment            {$$ = $1;}
 | block                 {$$ = $1;}
 | ifstmt                {$$ = $1;}
+| forstmt               {$$ = $1;}
 | exp                   {$$ = $1;};
 
 assignment:
@@ -172,7 +178,12 @@ ifstmt :
   "if" "(" condexp ")" stmt                   {$$ = new IfStmtAST($3,$5); }
 | "if" "(" condexp ")" stmt "else" stmt       {$$ = new IfStmtAST($3,$5,$7); }; 
 
+forstmt :
+"for" "(" init ";" condexp ";" assignment ")" stmt {$$ = new ForStmtAST($3,$5,$7,$9);};
 
+init :
+  binding {$$ = $1;}
+| assignment {$$ = $1;};
 
 condexp:
   exp "<" exp           { $$ = new BinaryExprAST('<',$1,$3); }

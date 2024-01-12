@@ -56,6 +56,13 @@ public:
 typedef std::variant<std::string,double> lexval;
 const lexval NONE = 0.0;
 
+//
+enum initType {
+  ASSIGNMENT,
+  BINDING,
+  INIT
+};
+
 // Classe base dell'intera gerarchia di classi che rappresentano
 // gli elementi del programma
 class RootAST {
@@ -76,7 +83,19 @@ public:
   Value *codegen(driver& drv) override;
 };
 
+/// classe che rappresenta tutti i nodi STMT
 class StmtAST : public RootAST{};
+
+/// classe che rappresenta tutte le inizializzazioni
+
+class InitAST : public StmtAST{
+  private:
+    std::string Name;
+  public:
+    
+    virtual std::string& getName();
+    virtual initType getType();
+};
 
 /// ExprAST - Classe base per tutti i nodi espressione
 class ExprAST : public StmtAST {};
@@ -142,7 +161,7 @@ class IfExprAST : public ExprAST {
 
 /// BlockAST
 
-class BlockAST : public StmtAST {
+class BlockAST : public ExprAST {
   private:
     std::vector<VarBindingsAST*> Def;
     std::vector<StmtAST*> Stmts;
@@ -156,26 +175,28 @@ class BlockAST : public StmtAST {
 
 /// VarBindingsAST
 
-class VarBindingsAST : public StmtAST{
+class VarBindingsAST : public InitAST{
   private:
     std::string Name;
     ExprAST* Val;
   public:
     VarBindingsAST(std::string Name, ExprAST* Val);
     AllocaInst* codegen(driver& drv) override;
-    std::string& getName();
+    initType getType() override;
+    std::string& getName() override;
 };
 
 /// AssigmentExprAST 
 
-class AssignmentExprAST : public StmtAST{
+class AssignmentExprAST : public InitAST{
   private:
     std::string Name;
     ExprAST* Val;
   public:
     AssignmentExprAST(std::string Name, ExprAST* Val);
     Value* codegen(driver& drv) override;
-    std::string& getName();
+    initType getType() override;
+    std::string& getName() override;
 };
 
 /// variabile globale
@@ -202,6 +223,19 @@ class IfStmtAST: public StmtAST{
     Value* codegen(driver& drv) override;
 };
 
+/// CLasse per la rappresentazione del blocco FOR
+
+class ForStmtAST: public StmtAST{
+  private:
+    InitAST* init;
+    ExprAST* cond;
+    AssignmentExprAST* step;
+    StmtAST* body;
+  public:
+    ForStmtAST(InitAST* init, ExprAST* cond, AssignmentExprAST* step, StmtAST* body);
+    Value* codegen(driver& drv) override;
+};
+
 /// PrototypeAST - Classe per la rappresentazione dei prototipi di funzione
 /// (nome, numero e nome dei parametri; in questo caso il tipo è implicito
 /// perché unico)
@@ -224,11 +258,11 @@ public:
 class FunctionAST : public RootAST {
 private:
   PrototypeAST* Proto;
-  StmtAST* Body;
+  ExprAST* Body;
   bool external;
   
 public:
-  FunctionAST(PrototypeAST* Proto, StmtAST* Body);
+  FunctionAST(PrototypeAST* Proto, ExprAST* Body);
   Function *codegen(driver& drv) override;
 };
 
