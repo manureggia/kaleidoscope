@@ -158,8 +158,10 @@ block:
 %left "+" "-";
 %left "*" "/";
 
+
 exp:
-  exp "+" exp           { $$ = new BinaryExprAST('+',$1,$3); }
+ "-" exp                { $$ = new BinaryExprAST('-',new NumberExprAST(0),$2);}
+|  exp "+" exp          { $$ = new BinaryExprAST('+',$1,$3); }
 | exp "-" exp           { $$ = new BinaryExprAST('-',$1,$3); }
 | exp "*" exp           { $$ = new BinaryExprAST('*',$1,$3); }
 | exp "/" exp           { $$ = new BinaryExprAST('/',$1,$3); }
@@ -167,6 +169,7 @@ exp:
 | "(" exp ")"           { $$ = $2; }
 | "number"              { $$ = new NumberExprAST($1); }
 | expif                 { $$ = $1; };
+
 
 vardefs:
   binding               { std::vector<VarBindingsAST*> definitions; definitions.push_back($1); $$ = definitions; }
