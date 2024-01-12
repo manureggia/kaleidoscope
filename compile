@@ -4,12 +4,6 @@
 output_option=""
 files=()
 
-# Funzione per il set di comandi 1
-execute_command_1() {
-    # Qui inserisci il set di comandi 1
-    echo "Esecuzione del set di comandi 1 con il file: $1"
-}
-
 finish() {
     local fn=${1%.*}
     llvm-as $1

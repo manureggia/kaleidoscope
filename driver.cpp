@@ -244,10 +244,10 @@ Value* IfExprAST::codegen(driver& drv){
 
 /************************* Block Tree *************************/
 
-BlockAST::BlockAST(std::vector<VarBindingsAST*> Def,std::vector<RootAST*> Stmts):
+BlockAST::BlockAST(std::vector<VarBindingsAST*> Def,std::vector<StmtAST*> Stmts):
   Def(std::move(Def)), Stmts(std::move(Stmts)) {};
 
-BlockAST::BlockAST(std::vector<RootAST*> Stmts):
+BlockAST::BlockAST(std::vector<StmtAST*> Stmts):
   Stmts(std::move(Stmts)) {};
 
 Value* BlockAST::codegen(driver& drv){
@@ -261,17 +261,28 @@ Value* BlockAST::codegen(driver& drv){
     drv.NamedValues[Def[i]->getName()] = boundval;
   }
   Value* blockvalue;
-  for(int i=0; i<Stmts.size(); i++)
+  for(int i=0; i<Stmts.size(); i++){
     blockvalue = Stmts[i]->codegen(drv);
+    if(!blockvalue) return nullptr;
+  }
+    
   for (int i=0; i<Def.size();i++ )
     drv.NamedValues[Def[i]->getName()] = tmp[i]; //rimetto i valori originali della symb
   return blockvalue;
 };
 
+/************************* InitAST *************************/
+
+std::string& InitAST::getName() {return Name;};
+initType InitAST::getType() {return INIT;};
+
+
 /************************* VarBindingAST *************************/
 
 VarBindingsAST::VarBindingsAST(std::string Name, ExprAST* Val) : Name(Name), Val(Val) {};
 std::string& VarBindingsAST::getName(){ return Name; };
+initType VarBindingsAST::getType() {return BINDING;};
+
 AllocaInst* VarBindingsAST::codegen(driver& drv) {
   Function *fun = builder->GetInsertBlock()->getParent();
   Value* boundval;
@@ -291,21 +302,20 @@ AllocaInst* VarBindingsAST::codegen(driver& drv) {
 
 AssignmentExprAST::AssignmentExprAST(std::string Name, ExprAST* Val) : Name(Name), Val(Val) {};
 std::string& AssignmentExprAST::getName(){ return Name; };
-AllocaInst* AssignmentExprAST::codegen(driver& drv) {
+initType AssignmentExprAST::getType() {return ASSIGNMENT;};
+Value* AssignmentExprAST::codegen(driver& drv) {
   AllocaInst *Variable = drv.NamedValues[Name];
   Value* boundval = Val->codegen(drv);
 
-  if(!boundval)
-    return nullptr;
+  if(!boundval) return nullptr;
   if (!Variable){
     Value* globVar = module->getNamedGlobal(Name);
-    if(!globVar)
-      return nullptr;
+    if(!globVar) return nullptr;
     builder->CreateStore(boundval,globVar);
-    return nullptr;
+    return boundval;
   }
   builder->CreateStore(boundval,Variable);
-  return Variable;
+  return boundval;
 };
 
 /************************* GlobalVariableAST *************************/
@@ -318,6 +328,117 @@ Value* GlobalVariableAST::codegen(driver &drv){
   fprintf(stderr, "\n");
   return globVar;
 }
+
+
+
+/************************* IF BLOCK *************************/
+
+
+IfStmtAST::IfStmtAST(ExprAST* cond, StmtAST* trueblock, StmtAST* falseblock):
+  cond(cond), trueblock(trueblock), falseblock(falseblock) {};
+
+IfStmtAST::IfStmtAST(ExprAST* cond, StmtAST* trueblock):
+  cond(cond), trueblock(trueblock) {};
+
+Value* IfStmtAST::codegen(driver& drv){
+  Value* CondV = cond->codegen(drv);
+  if (!CondV) return nullptr;
+
+  Function *fun = builder->GetInsertBlock()->getParent();
+  BasicBlock *TrueBB = BasicBlock::Create(*context, "trueblock",fun);
+  BasicBlock *FalseBB = BasicBlock::Create(*context, "falseblock");
+  BasicBlock *MergeBB = BasicBlock::Create(*context, "mergeblock");
+  
+  
+  builder->CreateCondBr(CondV, TrueBB, FalseBB);
+  
+
+  builder->SetInsertPoint(TrueBB);
+  Value* trueV = trueblock->codegen(drv);
+  if(!trueV) return nullptr;
+
+  TrueBB = builder->GetInsertBlock();
+  builder->CreateBr(MergeBB);
+
+  builder->SetInsertPoint(FalseBB);
+  Value* falseV;
+  fun->insert(fun->end(), FalseBB);
+  builder->SetInsertPoint(FalseBB);
+  if(falseblock){
+    falseV = falseblock->codegen(drv);
+    if(!falseV) return nullptr;
+    FalseBB = builder->GetInsertBlock();
+  }
+  builder->CreateBr(MergeBB);
+
+  fun->insert(fun->end(),MergeBB);
+  builder->SetInsertPoint(MergeBB);
+
+  PHINode *P = builder->CreatePHI(Type::getDoubleTy(*context),2);
+  P-> addIncoming(ConstantFP::getNullValue(Type::getDoubleTy(*context)), TrueBB);
+  P-> addIncoming(ConstantFP::getNullValue(Type::getDoubleTy(*context)), FalseBB);
+  return P;
+  
+  
+};
+
+
+
+/************************* FOR BLOCK *************************/
+
+ForStmtAST::ForStmtAST(InitAST* init, ExprAST* cond, AssignmentExprAST* step, StmtAST* body):
+init(init), cond(cond), step(step), body(body) {};
+Value* ForStmtAST::codegen(driver& drv) {
+  
+  Function *fun = builder->GetInsertBlock()->getParent();
+  BasicBlock *InitBB = BasicBlock::Create(*context, "init",fun);
+  builder->CreateBr(InitBB);
+  //inizializzazione
+  BasicBlock *CondBB = BasicBlock::Create(*context, "cond",fun);
+  BasicBlock *LoopBB = BasicBlock::Create(*context, "loop",fun);
+  BasicBlock *EndLoop = BasicBlock::Create(*context, "endloop",fun);
+  
+  builder->SetInsertPoint(InitBB);
+  
+  std::string varName = init->getName();
+  AllocaInst* oldVar;
+  Value* initVal = init->codegen(drv);;
+  if (!initVal) return nullptr;
+  //controllo se sono assigment -> il getType mi restituisce ASSIGMENT o BINDING
+  if (init->getType() == BINDING){
+    oldVar = drv.NamedValues[varName];
+    drv.NamedValues[varName] = (AllocaInst*) initVal;  
+  }
+  builder->CreateBr(CondBB);
+  //valutazione condizione
+  builder->SetInsertPoint(CondBB);
+  Value *condVal = cond->codegen(drv);
+  if(!condVal) return nullptr;
+  builder->CreateCondBr(condVal, LoopBB, EndLoop);
+  //body
+  builder->SetInsertPoint(LoopBB);
+  Value *bodyVal = body->codegen(drv);
+  if(!bodyVal) return nullptr;
+  //step
+  Value* stepVal = step->codegen(drv);
+  if(!stepVal) return nullptr;
+
+  //br incondizionato all'inizio del loop
+  builder->CreateBr(CondBB);
+  //End loop
+  builder->SetInsertPoint(EndLoop);
+  PHINode *P = builder->CreatePHI(Type::getDoubleTy(*context),1);
+  P->addIncoming(ConstantFP::getNullValue(Type::getDoubleTy(*context)),CondBB);
+
+  if(init->getType() == BINDING){
+    drv.NamedValues[varName] = oldVar; //rimetto i valori originali della symb
+  }
+  return P;
+};
+
+
+
+
 
 /************************* Prototype Tree *************************/
 PrototypeAST::PrototypeAST(std::string Name, std::vector<std::string> Args):

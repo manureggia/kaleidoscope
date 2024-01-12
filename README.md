@@ -12,3 +12,26 @@ make all
 ```
 
 Per far copilare un programma, linkarlo con il suo corrispettivo _caller_,  si utilizza lo script `compile`
+
+## Grammatica di secondo livello
+
+```
+stmt :
+assignment
+| block
+| ifstmt
+| forstmt
+| exp
+
+ifstmt :
+"if" "(" condexp ")" stmt
+| "if" "(" condexp ")" stmt " else " stmt
+
+forstmt:
+" for " "(" init ";" condexp ";" assignment ")" stmt
+
+init :
+binding
+| assignment
+
+```

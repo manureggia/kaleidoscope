@@ -56,6 +56,13 @@ public:
 typedef std::variant<std::string,double> lexval;
 const lexval NONE = 0.0;
 
+//
+enum initType {
+  ASSIGNMENT,
+  BINDING,
+  INIT
+};
+
 // Classe base dell'intera gerarchia di classi che rappresentano
 // gli elementi del programma
 class RootAST {
@@ -76,8 +83,22 @@ public:
   Value *codegen(driver& drv) override;
 };
 
+/// classe che rappresenta tutti i nodi STMT
+class StmtAST : public RootAST{};
+
+/// classe che rappresenta tutte le inizializzazioni
+
+class InitAST : public StmtAST{
+  private:
+    std::string Name;
+  public:
+    
+    virtual std::string& getName();
+    virtual initType getType();
+};
+
 /// ExprAST - Classe base per tutti i nodi espressione
-class ExprAST : public RootAST {};
+class ExprAST : public StmtAST {};
 
 /// NumberExprAST - Classe per la rappresentazione di costanti numeriche
 class NumberExprAST : public ExprAST {
@@ -143,10 +164,10 @@ class IfExprAST : public ExprAST {
 class BlockAST : public ExprAST {
   private:
     std::vector<VarBindingsAST*> Def;
-    std::vector<RootAST*> Stmts;
+    std::vector<StmtAST*> Stmts;
   public:
-  BlockAST(std::vector<VarBindingsAST*> Def,std::vector<RootAST*> Stmts);
-  BlockAST(std::vector<RootAST*> Stmts);
+  BlockAST(std::vector<VarBindingsAST*> Def,std::vector<StmtAST*> Stmts);
+  BlockAST(std::vector<StmtAST*> Stmts);
   Value *codegen(driver& drv) override;
 };
 
@@ -154,26 +175,28 @@ class BlockAST : public ExprAST {
 
 /// VarBindingsAST
 
-class VarBindingsAST : public RootAST{
+class VarBindingsAST : public InitAST{
   private:
     std::string Name;
     ExprAST* Val;
   public:
     VarBindingsAST(std::string Name, ExprAST* Val);
     AllocaInst* codegen(driver& drv) override;
-    std::string& getName();
+    initType getType() override;
+    std::string& getName() override;
 };
 
 /// AssigmentExprAST 
 
-class AssignmentExprAST : public RootAST{
+class AssignmentExprAST : public InitAST{
   private:
     std::string Name;
     ExprAST* Val;
   public:
     AssignmentExprAST(std::string Name, ExprAST* Val);
-    AllocaInst* codegen(driver& drv) override;
-    std::string& getName();
+    Value* codegen(driver& drv) override;
+    initType getType() override;
+    std::string& getName() override;
 };
 
 /// variabile globale
@@ -185,6 +208,32 @@ class GlobalVariableAST: public RootAST{
     GlobalVariableAST(std::string Name);
     Value* codegen(driver& drv) override;
     std::string& getName();
+};
+
+/// Calsse per la rappresentazione del blocco IF
+
+class IfStmtAST: public StmtAST{
+  private:
+    ExprAST* cond;
+    StmtAST* trueblock; 
+    StmtAST* falseblock; 
+  public:
+    IfStmtAST(ExprAST* cond, StmtAST* trueblock, StmtAST* falseblock);
+    IfStmtAST(ExprAST* cond, StmtAST* trueblock);
+    Value* codegen(driver& drv) override;
+};
+
+/// CLasse per la rappresentazione del blocco FOR
+
+class ForStmtAST: public StmtAST{
+  private:
+    InitAST* init;
+    ExprAST* cond;
+    AssignmentExprAST* step;
+    StmtAST* body;
+  public:
+    ForStmtAST(InitAST* init, ExprAST* cond, AssignmentExprAST* step, StmtAST* body);
+    Value* codegen(driver& drv) override;
 };
 
 /// PrototypeAST - Classe per la rappresentazione dei prototipi di funzione
