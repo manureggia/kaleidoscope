@@ -61,6 +61,9 @@
   ASSIGN     "="
   LBRACE     "{"
   RBRACE     "}"
+  AND        "and"
+  OR         "or"
+  NOT        "not"
   EXTERN     "extern"
   DEF        "def"
   VAR        "var"
@@ -75,8 +78,9 @@
 %type <ExprAST*> exp
 %type <ExprAST*> idexp
 %type <ExprAST*> expif 
-%type <ExprAST*> condexp
+%type <ExprAST*> relexp
 %type <ExprAST*> initexp
+%type <ExprAST*> condexp
 %type <std::vector<ExprAST*>> optexp
 %type <std::vector<ExprAST*>> explist
 %type <RootAST*> program
@@ -153,9 +157,11 @@ block:
 | "{" vardefs ";" stmts "}" { $$ = new BlockAST($2,$4); };
 
 
-%left ":";
+%left ":" "?";
 %left "<" "==";
 %left "+" "-";
+%left "not";
+%left "and" "or";
 %left "*" "/";
 
 
@@ -200,7 +206,14 @@ init :
 | assignment {$$ = $1;};
 
 condexp:
-  exp "<" exp           { $$ = new BinaryExprAST('<',$1,$3); }
+  relexp                 {$$ = $1;}
+| relexp "and" condexp   {$$ = new BinaryExprAST('a',$1,$3);}
+| relexp "or" condexp    {$$ = new BinaryExprAST('o',$1,$3);}
+| "not" condexp          {$$ = new BinaryExprAST('n',nullptr,$2);}
+| "(" condexp ")"        {$$ = $2;};
+
+relexp:
+  exp "<" exp            { $$ = new BinaryExprAST('<',$1,$3); }
 | exp "==" exp           { $$ = new BinaryExprAST('=',$1,$3); };
 
 idexp:

@@ -122,6 +122,11 @@ BinaryExprAST::BinaryExprAST(char Op, ExprAST* LHS, ExprAST* RHS):
 // operando. Con i valori memorizzati in altrettanti registri SSA si
 // costruisce l'istruzione utilizzando l'opportuno operatore
 Value *BinaryExprAST::codegen(driver& drv) {
+  if (Op == 'n'){
+    Value *R = RHS->codegen(drv);
+    if(!R) return nullptr;
+    return builder->CreateNot(R,"notres");
+  }
   Value *L = LHS->codegen(drv);
   Value *R = RHS->codegen(drv);
   if (!L || !R) 
@@ -139,6 +144,10 @@ Value *BinaryExprAST::codegen(driver& drv) {
     return builder->CreateFCmpULT(L,R,"lttest");
   case '=':
     return builder->CreateFCmpUEQ(L,R,"eqtest");
+  case 'a':
+    return builder->CreateLogicalAnd(L,R,"andres");
+  case 'o':
+    return builder->CreateLogicalOr(L,R,"orres");
   default:  
     std::cout << Op << std::endl;
     return LogErrorV("Operatore binario non supportato");
@@ -435,10 +444,6 @@ Value* ForStmtAST::codegen(driver& drv) {
   }
   return P;
 };
-
-
-
-
 
 /************************* Prototype Tree *************************/
 PrototypeAST::PrototypeAST(std::string Name, std::vector<std::string> Args):
