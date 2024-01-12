@@ -35,3 +35,5 @@ binding
 | assignment
 
 ```
+
+Funzionante !!
