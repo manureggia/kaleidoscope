@@ -149,8 +149,9 @@ assignment:
 
 
 block:
-  "{" stmts "}"             { $$ = new BlockAST($2); }
+  "{" stmts "}"             { $$ = new BlockAST($2); } 
 | "{" vardefs ";" stmts "}" { $$ = new BlockAST($2,$4); };
+
 
 %left ":";
 %left "<" "==";
@@ -181,8 +182,11 @@ initexp:
 expif:
   condexp "?" exp ":" exp { $$ = new IfExprAST($1,$3,$5);};
 
+
+%right "then" "else" ; // Same precedence, but "shift" wins
+
 ifstmt :
-  "if" "(" condexp ")" stmt                   {$$ = new IfStmtAST($3,$5); }
+  "if" "(" condexp ")" stmt                   {$$ = new IfStmtAST($3,$5); } %prec "then"
 | "if" "(" condexp ")" stmt "else" stmt       {$$ = new IfStmtAST($3,$5,$7); }; 
 
 forstmt :

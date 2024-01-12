@@ -349,10 +349,9 @@ Value* IfStmtAST::codegen(driver& drv){
   BasicBlock *FalseBB = BasicBlock::Create(*context, "falseblock");
   BasicBlock *MergeBB = BasicBlock::Create(*context, "mergeblock");
   
-  if(falseblock)
-    builder->CreateCondBr(CondV, TrueBB, FalseBB);
-  else
-    builder->CreateCondBr(CondV, TrueBB, MergeBB);
+  
+  builder->CreateCondBr(CondV, TrueBB, FalseBB);
+  
 
   builder->SetInsertPoint(TrueBB);
   Value* trueV = trueblock->codegen(drv);
@@ -361,31 +360,25 @@ Value* IfStmtAST::codegen(driver& drv){
   TrueBB = builder->GetInsertBlock();
   builder->CreateBr(MergeBB);
 
+  builder->SetInsertPoint(FalseBB);
   Value* falseV;
+  fun->insert(fun->end(), FalseBB);
+  builder->SetInsertPoint(FalseBB);
   if(falseblock){
-    //FalseBB = BasicBlock::Create(*context, "falseblock",fun);
-    fun->insert(fun->end(), FalseBB);
-    builder->SetInsertPoint(FalseBB);
     falseV = falseblock->codegen(drv);
     if(!falseV) return nullptr;
-
     FalseBB = builder->GetInsertBlock();
-    builder->CreateBr(MergeBB);
   }
-  
+  builder->CreateBr(MergeBB);
+
   fun->insert(fun->end(),MergeBB);
   builder->SetInsertPoint(MergeBB);
 
-  if(falseblock){
-    PHINode *P = builder->CreatePHI(Type::getDoubleTy(*context),2);
-    P-> addIncoming(trueV, TrueBB);
-    P-> addIncoming(falseV, FalseBB);
-    return P;
-  }else{
-    PHINode *P = builder->CreatePHI(Type::getDoubleTy(*context),1);
-    P-> addIncoming(trueV, TrueBB);
-    return P;
-  }
+  PHINode *P = builder->CreatePHI(Type::getDoubleTy(*context),2);
+  P-> addIncoming(ConstantFP::getNullValue(Type::getDoubleTy(*context)), TrueBB);
+  P-> addIncoming(ConstantFP::getNullValue(Type::getDoubleTy(*context)), FalseBB);
+  return P;
+  
   
 };
 
