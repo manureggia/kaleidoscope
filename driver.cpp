@@ -363,7 +363,7 @@ Value* IfStmtAST::codegen(driver& drv){
 
   Value* falseV;
   if(falseblock){
-    FalseBB = BasicBlock::Create(*context, "falseblock");
+    //FalseBB = BasicBlock::Create(*context, "falseblock",fun);
     fun->insert(fun->end(), FalseBB);
     builder->SetInsertPoint(FalseBB);
     falseV = falseblock->codegen(drv);
@@ -398,11 +398,15 @@ init(init), cond(cond), step(step), body(body) {};
 Value* ForStmtAST::codegen(driver& drv) {
   
   Function *fun = builder->GetInsertBlock()->getParent();
-
+  BasicBlock *InitBB = BasicBlock::Create(*context, "init",fun);
+  builder->CreateBr(InitBB);
   //inizializzazione
-  BasicBlock *InitBB = BasicBlock::Create(*context, "initloop",fun);
+  BasicBlock *CondBB = BasicBlock::Create(*context, "cond",fun);
+  BasicBlock *LoopBB = BasicBlock::Create(*context, "loop",fun);
+  BasicBlock *EndLoop = BasicBlock::Create(*context, "endloop",fun);
+  
   builder->SetInsertPoint(InitBB);
-
+  
   std::string varName = init->getName();
   AllocaInst* oldVar;
   Value* initVal = init->codegen(drv);;
@@ -412,13 +416,7 @@ Value* ForStmtAST::codegen(driver& drv) {
     oldVar = drv.NamedValues[varName];
     drv.NamedValues[varName] = (AllocaInst*) initVal;  
   }
-  
-
-
-  BasicBlock *CondBB = BasicBlock::Create(*context, "cond", fun);
-  BasicBlock *LoopBB = BasicBlock::Create(*context, "loop", fun);
-  BasicBlock *EndLoop = BasicBlock::Create(*context, "endloop", fun);
-  
+  builder->CreateBr(CondBB);
   //valutazione condizione
   builder->SetInsertPoint(CondBB);
   Value *condVal = cond->codegen(drv);
@@ -437,7 +435,7 @@ Value* ForStmtAST::codegen(driver& drv) {
   //End loop
   builder->SetInsertPoint(EndLoop);
   PHINode *P = builder->CreatePHI(Type::getDoubleTy(*context),1);
-  P->addIncoming(ConstantFP::get(Type::getDoubleTy(*context), 0.0),CondBB);
+  P->addIncoming(ConstantFP::getNullValue(Type::getDoubleTy(*context)),CondBB);
 
   if(init->getType() == BINDING){
     drv.NamedValues[varName] = oldVar; //rimetto i valori originali della symb
