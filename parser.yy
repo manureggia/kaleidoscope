@@ -46,7 +46,9 @@
   END  0  "end of file"
   SEMICOLON  ";"
   COMMA      ","
+  DMINUS     "--"
   MINUS      "-"
+  DPLUS      "++"
   PLUS       "+"
   STAR       "*"
   SLASH      "/"
@@ -139,7 +141,12 @@ stmt:
 | exp                   {$$ = $1;};
 
 assignment:
-  "id" "=" exp          {$$ = new AssignmentExprAST($1,$3);};
+  "id" "=" exp          {$$ = new AssignmentExprAST($1,$3);}
+| "++" "id"             {$$ = new AssignmentExprAST($2, new BinaryExprAST('+',new VariableExprAST($2),new NumberExprAST(1)));}
+| "id" "++"             {$$ = new AssignmentExprAST($1, new BinaryExprAST('+',new VariableExprAST($1),new NumberExprAST(1)));}
+| "--" "id"             {$$ = new AssignmentExprAST($2, new BinaryExprAST('-',new VariableExprAST($2),new NumberExprAST(1)));}
+| "id" "--"             {$$ = new AssignmentExprAST($1, new BinaryExprAST('-',new VariableExprAST($1),new NumberExprAST(1)));};
+
 
 block:
   "{" stmts "}"             { $$ = new BlockAST($2); }
