@@ -24,9 +24,9 @@ Value *LogErrorV(const std::string Str) {
    interferire con il builder globale, la generazione viene dunque effettuata
    con un builder temporaneo TmpB
 */
-static AllocaInst *CreateEntryBlockAlloca(Function *fun, StringRef VarName) {
+static AllocaInst *CreateEntryBlockAlloca(Function *fun, StringRef VarName, Type* type=Type::getDoubleTy(*context)) {
   IRBuilder<> TmpB(&fun->getEntryBlock(), fun->getEntryBlock().begin());
-  return TmpB.CreateAlloca(Type::getDoubleTy(*context), nullptr, VarName);
+  return TmpB.CreateAlloca(type, nullptr, VarName);
 }
 
 // Implementazione del costruttore della classe driver
@@ -85,7 +85,8 @@ Value *NumberExprAST::codegen(driver& drv) {
 };
 
 /******************** Variable Expression Tree ********************/
-VariableExprAST::VariableExprAST(const std::string &Name): Name(Name) {};
+VariableExprAST::VariableExprAST(const std::string &Name, ExprAST* Exp , bool isArray): 
+  Name(Name), Exp(Exp), isArray(isArray) {};
 
 lexval VariableExprAST::getLexVal() const {
   lexval lval = Name;
@@ -108,8 +109,24 @@ Value *VariableExprAST::codegen(driver& drv) {
     GlobalVariable* globVar = module->getNamedGlobal(Name);
     if (!globVar)
       return LogErrorV("Variabile non definita: "+Name);
+    if(isArray){
+      Value* Val = Exp->codegen(drv);
+      if(!Val) return nullptr;
+      //Value* floatIndex = builder->CreateFPTrunc(Val, Type::getFloatTy(*context));
+      Value* intIndex = builder->CreateFPToSI(Val, Type::getInt32Ty(*context));
+      Value* cell = builder->CreateInBoundsGEP(globVar->getValueType(),globVar,ConstantInt::get(*context,APInt()));
+      return builder->CreateLoad(Type::getDoubleTy(*context), cell, Name.c_str());
+    }
     return builder->CreateLoad(globVar->getValueType(), globVar, Name.c_str());
   }
+  if(isArray){
+      Value* Val = Exp->codegen(drv);
+      if(!Val) return nullptr;
+      //Value* floatIndex = builder->CreateFPTrunc(Val, Type::getFloatTy(*context));
+      Value* intIndex = builder->CreateFPToSI(Val, Type::getInt32Ty(*context));
+      Value* cell = builder->CreateInBoundsGEP(A->getAllocatedType(),A,intIndex);
+      return builder->CreateLoad(Type::getDoubleTy(*context), cell, Name.c_str());
+    }
   return builder->CreateLoad(A->getAllocatedType(), A, Name.c_str());
 }
 
@@ -142,6 +159,8 @@ Value *BinaryExprAST::codegen(driver& drv) {
     return builder->CreateFDiv(L,R,"addres");
   case '<':
     return builder->CreateFCmpULT(L,R,"lttest");
+  case '>':
+    return builder->CreateFCmpUGT(L,R,"gttest");
   case '=':
     return builder->CreateFCmpUEQ(L,R,"eqtest");
   case 'a':
@@ -253,7 +272,7 @@ Value* IfExprAST::codegen(driver& drv){
 
 /************************* Block Tree *************************/
 
-BlockAST::BlockAST(std::vector<VarBindingsAST*> Def,std::vector<StmtAST*> Stmts):
+BlockAST::BlockAST(std::vector<InitAST*> Def,std::vector<StmtAST*> Stmts):
   Def(std::move(Def)), Stmts(std::move(Stmts)) {};
 
 BlockAST::BlockAST(std::vector<StmtAST*> Stmts):
@@ -262,8 +281,8 @@ BlockAST::BlockAST(std::vector<StmtAST*> Stmts):
 Value* BlockAST::codegen(driver& drv){
   // vettore per il salvataggio della symbol table
   std::vector<AllocaInst*> tmp;
-  for (int i=0; i<Def.size();i++ ){
-    AllocaInst *boundval = Def[i]->codegen(drv);
+  for (int i=0; i<Def.size() && Def[i]->getType() == BINDING;i++ ){
+    AllocaInst *boundval = (AllocaInst*) Def[i]->codegen(drv);
     if (!boundval) return nullptr;
     //salvo il vecchio valore della varaiabile oscurata.
     tmp.push_back(drv.NamedValues[Def[i]->getName()]);
@@ -288,7 +307,7 @@ initType InitAST::getType() {return INIT;};
 
 /************************* VarBindingAST *************************/
 
-VarBindingsAST::VarBindingsAST(std::string Name, ExprAST* Val) : Name(Name), Val(Val) {};
+VarBindingsAST::VarBindingsAST(std::string Name, ExprAST* Val) : Name(Name) {};
 std::string& VarBindingsAST::getName(){ return Name; };
 initType VarBindingsAST::getType() {return BINDING;};
 
@@ -306,22 +325,62 @@ AllocaInst* VarBindingsAST::codegen(driver& drv) {
   return Alloca;
 };
 
+/************************* ArrayBindingAST *************************/
+
+ArrayBindingAST::ArrayBindingAST(std::string Name, double Size, std::vector<ExprAST*> Val) :
+  Name(Name), Size(Size), Val(std::move(Val)) {};
+
+std::string& ArrayBindingAST::getName(){ return Name; };
+initType ArrayBindingAST::getType() {return BINDING;};
+
+AllocaInst* ArrayBindingAST::codegen(driver& drv) {
+  Function *fun = builder->GetInsertBlock()->getParent();
+  ArrayType *AT = ArrayType::get(Type::getDoubleTy(*context),Size);
+  AllocaInst *Alloca = CreateEntryBlockAlloca(fun,Name,AT);
+  for(int32_t i = 0; i<Size; i++){
+    Value* Index = builder->CreateInBoundsGEP(AT,Alloca,ConstantInt::get(*context,APInt(32,i,true)));
+    if(Val.size()){
+      Value* actVal = Val[i]->codegen(drv);
+      if(!actVal) return nullptr;
+      builder->CreateStore(actVal, Index);
+    }
+    //else
+      //builder->CreateStore(ConstantFP::getNullValue(Type::getDoubleTy(*context)), Index);
+  }
+  return Alloca;
+}
+
 
 /************************* AssignmentExprAST *************************/
 
-AssignmentExprAST::AssignmentExprAST(std::string Name, ExprAST* Val) : Name(Name), Val(Val) {};
+AssignmentExprAST::AssignmentExprAST(std::string Name, ExprAST* Val, ExprAST* Pos) : Name(Name), Val(Val), Pos(Pos) {};
 std::string& AssignmentExprAST::getName(){ return Name; };
 initType AssignmentExprAST::getType() {return ASSIGNMENT;};
 Value* AssignmentExprAST::codegen(driver& drv) {
   AllocaInst *Variable = drv.NamedValues[Name];
   Value* boundval = Val->codegen(drv);
-
   if(!boundval) return nullptr;
+  
   if (!Variable){
-    Value* globVar = module->getNamedGlobal(Name);
+    GlobalVariable* globVar = module->getNamedGlobal(Name);
     if(!globVar) return nullptr;
-    builder->CreateStore(boundval,globVar);
+    if(Pos){
+      Value* doubleIndex = Pos->codegen(drv);
+      if(!doubleIndex) return nullptr;
+      Value* intIndex = builder->CreateFPToSI(doubleIndex, Type::getInt32Ty(*context));
+      Value* cell = builder->CreateInBoundsGEP(globVar->getValueType(),globVar,ConstantInt::get(*context,APInt()));
+      builder->CreateStore(boundval,cell);
+    }
+    else
+      builder->CreateStore(boundval,globVar);
     return boundval;
+  }
+  if(Pos){
+    Value* doubleIndex = Pos->codegen(drv);
+    if(!doubleIndex) return nullptr;
+    Value* intIndex = builder->CreateFPToSI(doubleIndex, Type::getInt32Ty(*context));
+    Value* cell = builder->CreateInBoundsGEP(Variable->getAllocatedType(),Variable,ConstantInt::get(*context,APInt()));
+    builder->CreateStore(boundval,cell);
   }
   builder->CreateStore(boundval,Variable);
   return boundval;
@@ -329,10 +388,18 @@ Value* AssignmentExprAST::codegen(driver& drv) {
 
 /************************* GlobalVariableAST *************************/
 
-GlobalVariableAST::GlobalVariableAST(std::string Name) : Name(Name) {}
+GlobalVariableAST::GlobalVariableAST(std::string Name, double Size, bool isArray) : Name(Name), Size(Size), isArray(isArray) {}
 std::string& GlobalVariableAST::getName(){ return Name; };
-Value* GlobalVariableAST::codegen(driver &drv){ 
-  GlobalVariable *globVar = new GlobalVariable(*module, Type::getDoubleTy(*context), false, GlobalValue::CommonLinkage,  ConstantFP::get(Type::getDoubleTy(*context), 0.0), Name);
+Value* GlobalVariableAST::codegen(driver &drv){
+  GlobalVariable *globVar;
+  if (isArray){
+    if(Size < 1) return nullptr;
+    ArrayType *AT = ArrayType::get(Type::getDoubleTy(*context),Size);
+    globVar = new GlobalVariable(*module, AT, false, GlobalValue::CommonLinkage,  ConstantFP::getNullValue(AT), Name);    
+  }
+  else{
+    globVar = new GlobalVariable(*module, Type::getDoubleTy(*context), false, GlobalValue::CommonLinkage,  ConstantFP::getNullValue(Type::getDoubleTy(*context)), Name);    
+  }
   globVar->print(errs());
   fprintf(stderr, "\n");
   return globVar;

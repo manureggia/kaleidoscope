@@ -115,9 +115,10 @@ public:
 class VariableExprAST : public ExprAST {
 private:
   std::string Name;
-  
+  ExprAST* Exp;
+  bool isArray;
 public:
-  VariableExprAST(const std::string &Name);
+  VariableExprAST(const std::string &Name, ExprAST* Exp = nullptr, bool isArray = false);
   lexval getLexVal() const override;
   Value *codegen(driver& drv) override;
 };
@@ -163,10 +164,10 @@ class IfExprAST : public ExprAST {
 
 class BlockAST : public ExprAST {
   private:
-    std::vector<VarBindingsAST*> Def;
+    std::vector<InitAST*> Def;
     std::vector<StmtAST*> Stmts;
   public:
-  BlockAST(std::vector<VarBindingsAST*> Def,std::vector<StmtAST*> Stmts);
+  BlockAST(std::vector<InitAST*> Def,std::vector<StmtAST*> Stmts);
   BlockAST(std::vector<StmtAST*> Stmts);
   Value *codegen(driver& drv) override;
 };
@@ -186,14 +187,30 @@ class VarBindingsAST : public InitAST{
     std::string& getName() override;
 };
 
+/// ArrayBindingAST
+
+class ArrayBindingAST : public InitAST{
+  private:
+    std::string Name;
+    double Size;
+    std::vector<ExprAST*> Val;
+  public:
+    ArrayBindingAST(std::string Name, double Size, std::vector<ExprAST*> Val = std::vector<ExprAST*>());
+    AllocaInst* codegen(driver& drv) override;
+    initType getType() override;
+    std::string& getName() override; 
+};
+
 /// AssigmentExprAST 
 
 class AssignmentExprAST : public InitAST{
   private:
     std::string Name;
     ExprAST* Val;
+    ExprAST* Pos;
+
   public:
-    AssignmentExprAST(std::string Name, ExprAST* Val);
+    AssignmentExprAST(std::string Name, ExprAST* Val, ExprAST* Pos = nullptr);
     Value* codegen(driver& drv) override;
     initType getType() override;
     std::string& getName() override;
@@ -204,8 +221,10 @@ class AssignmentExprAST : public InitAST{
 class GlobalVariableAST: public RootAST{
   private:
     std::string Name;
+    double Size;
+    bool isArray;
   public:
-    GlobalVariableAST(std::string Name);
+    GlobalVariableAST(std::string Name, double Size=-1, bool isArray = false);
     Value* codegen(driver& drv) override;
     std::string& getName();
 };
