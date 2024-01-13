@@ -93,16 +93,6 @@ lexval VariableExprAST::getLexVal() const {
   return lval;
 };
 
-// NamedValues è una tabella che ad ogni variabile (che, in Kaleidoscope1.0, 
-// può essere solo un parametro di funzione) associa non un valore bensì
-// la rappresentazione di una funzione che alloca memoria e restituisce in un
-// registro SSA il puntatore alla memoria allocata. Generare il codice corrispondente
-// ad una varibile equivale dunque a recuperare il tipo della variabile 
-// allocata e il nome del registro e generare una corrispondente istruzione di load
-// Negli argomenti della CreateLoad ritroviamo quindi: (1) il tipo allocato, (2) il registro
-// SSA in cui è stato messo il puntatore alla memoria allocata (si ricordi che A è
-// l'istruzione ma è anche il registro, vista la corrispodenza 1-1 fra le due nozioni), (3)
-// il nome del registro in cui verrà trasferito il valore dalla memoria
 Value *VariableExprAST::codegen(driver& drv) {
   AllocaInst *A = drv.NamedValues[Name];
   if (!A){
@@ -112,9 +102,9 @@ Value *VariableExprAST::codegen(driver& drv) {
     if(isArray){
       Value* Val = Exp->codegen(drv);
       if(!Val) return nullptr;
-      //Value* floatIndex = builder->CreateFPTrunc(Val, Type::getFloatTy(*context));
-      Value* intIndex = builder->CreateFPToSI(Val, Type::getInt32Ty(*context));
-      Value* cell = builder->CreateInBoundsGEP(globVar->getValueType(),globVar,ConstantInt::get(*context,APInt()));
+      Value* floatIndex = builder->CreateFPTrunc(Val, Type::getFloatTy(*context));
+      Value* intIndex = builder->CreateFPToSI(floatIndex, Type::getInt32Ty(*context));
+      Value* cell = builder->CreateInBoundsGEP(globVar->getValueType(),globVar,intIndex);
       return builder->CreateLoad(Type::getDoubleTy(*context), cell, Name.c_str());
     }
     return builder->CreateLoad(globVar->getValueType(), globVar, Name.c_str());
@@ -122,8 +112,8 @@ Value *VariableExprAST::codegen(driver& drv) {
   if(isArray){
       Value* Val = Exp->codegen(drv);
       if(!Val) return nullptr;
-      //Value* floatIndex = builder->CreateFPTrunc(Val, Type::getFloatTy(*context));
-      Value* intIndex = builder->CreateFPToSI(Val, Type::getInt32Ty(*context));
+      Value* floatIndex = builder->CreateFPTrunc(Val, Type::getFloatTy(*context));
+      Value* intIndex = builder->CreateFPToSI(floatIndex, Type::getInt32Ty(*context));
       Value* cell = builder->CreateInBoundsGEP(A->getAllocatedType(),A,intIndex);
       return builder->CreateLoad(Type::getDoubleTy(*context), cell, Name.c_str());
     }
@@ -281,7 +271,7 @@ BlockAST::BlockAST(std::vector<StmtAST*> Stmts):
 Value* BlockAST::codegen(driver& drv){
   // vettore per il salvataggio della symbol table
   std::vector<AllocaInst*> tmp;
-  for (int i=0; i<Def.size() && Def[i]->getType() == BINDING;i++ ){
+  for (int i=0; i<Def.size();i++ ){
     AllocaInst *boundval = (AllocaInst*) Def[i]->codegen(drv);
     if (!boundval) return nullptr;
     //salvo il vecchio valore della varaiabile oscurata.
@@ -307,7 +297,7 @@ initType InitAST::getType() {return INIT;};
 
 /************************* VarBindingAST *************************/
 
-VarBindingsAST::VarBindingsAST(std::string Name, ExprAST* Val) : Name(Name) {};
+VarBindingsAST::VarBindingsAST(std::string Name, ExprAST* Val) : Name(Name), Val(Val) {};
 std::string& VarBindingsAST::getName(){ return Name; };
 initType VarBindingsAST::getType() {return BINDING;};
 
@@ -335,17 +325,18 @@ initType ArrayBindingAST::getType() {return BINDING;};
 
 AllocaInst* ArrayBindingAST::codegen(driver& drv) {
   Function *fun = builder->GetInsertBlock()->getParent();
-  ArrayType *AT = ArrayType::get(Type::getDoubleTy(*context),Size);
+  int intSize = Size;
+  ArrayType *AT = ArrayType::get(Type::getDoubleTy(*context),intSize);
   AllocaInst *Alloca = CreateEntryBlockAlloca(fun,Name,AT);
-  for(int32_t i = 0; i<Size; i++){
+  for(int i = 0; i<Size; i++){
     Value* Index = builder->CreateInBoundsGEP(AT,Alloca,ConstantInt::get(*context,APInt(32,i,true)));
-    if(Val.size()){
+    if(Val.size() != 0){
       Value* actVal = Val[i]->codegen(drv);
       if(!actVal) return nullptr;
       builder->CreateStore(actVal, Index);
     }
-    //else
-      //builder->CreateStore(ConstantFP::getNullValue(Type::getDoubleTy(*context)), Index);
+    else
+      builder->CreateStore(ConstantFP::getNullValue(Type::getDoubleTy(*context)), Index);
   }
   return Alloca;
 }
@@ -360,15 +351,15 @@ Value* AssignmentExprAST::codegen(driver& drv) {
   AllocaInst *Variable = drv.NamedValues[Name];
   Value* boundval = Val->codegen(drv);
   if(!boundval) return nullptr;
-  
   if (!Variable){
     GlobalVariable* globVar = module->getNamedGlobal(Name);
     if(!globVar) return nullptr;
     if(Pos){
       Value* doubleIndex = Pos->codegen(drv);
       if(!doubleIndex) return nullptr;
-      Value* intIndex = builder->CreateFPToSI(doubleIndex, Type::getInt32Ty(*context));
-      Value* cell = builder->CreateInBoundsGEP(globVar->getValueType(),globVar,ConstantInt::get(*context,APInt()));
+      Value* floatIndex = builder->CreateFPTrunc(doubleIndex, Type::getFloatTy(*context));
+      Value* intIndex = builder->CreateFPToSI(floatIndex, Type::getInt32Ty(*context));
+      Value* cell = builder->CreateInBoundsGEP(globVar->getValueType(),globVar,intIndex);
       builder->CreateStore(boundval,cell);
     }
     else
@@ -378,11 +369,13 @@ Value* AssignmentExprAST::codegen(driver& drv) {
   if(Pos){
     Value* doubleIndex = Pos->codegen(drv);
     if(!doubleIndex) return nullptr;
-    Value* intIndex = builder->CreateFPToSI(doubleIndex, Type::getInt32Ty(*context));
-    Value* cell = builder->CreateInBoundsGEP(Variable->getAllocatedType(),Variable,ConstantInt::get(*context,APInt()));
+    Value* floatIndex = builder->CreateFPTrunc(doubleIndex, Type::getFloatTy(*context));
+    Value* intIndex = builder->CreateFPToSI(floatIndex, Type::getInt32Ty(*context));    
+    Value* cell = builder->CreateInBoundsGEP(Variable->getAllocatedType(),Variable,intIndex);
     builder->CreateStore(boundval,cell);
   }
-  builder->CreateStore(boundval,Variable);
+  else
+    builder->CreateStore(boundval,Variable);
   return boundval;
 };
 
