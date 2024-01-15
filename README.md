@@ -91,7 +91,7 @@ Value* AssignmentExprAST::codegen(driver& drv) {
 ```
 Qui è già presente della logica per l'individuazione dell'array, che vengono poi spiegate dopo
 
-#### Variabile globali
+#### Variabili globali
 
 Le variabili globali sono implementate in modo differente dalle variabili locali, si utilizza una classe `GlobalVariable`, che gestisce praticamente tutto out-of-the-box. bisogna stare attenti allo scope: nelle istruzioni che comprendono il retrive di valori di variabili, andranno prima controllati gli scope locali e infine quello globale.
 la classe, che deriva `RootAST` è quindi implementata nel seguente modo:
