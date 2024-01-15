@@ -335,8 +335,8 @@ AllocaInst* ArrayBindingAST::codegen(driver& drv) {
       if(!actVal) return nullptr;
       builder->CreateStore(actVal, Index);
     }
-    else
-      builder->CreateStore(ConstantFP::getNullValue(Type::getDoubleTy(*context)), Index);
+    //else
+     // builder->CreateStore(ConstantFP::getNullValue(Type::getDoubleTy(*context)), Index);
   }
   return Alloca;
 }
